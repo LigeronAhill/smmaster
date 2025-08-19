@@ -5,8 +5,8 @@ fn main() {
     tonic_prost_build::configure()
         .file_descriptor_set_path(out_dir.join("smm_descriptor.bin"))
         .compile_protos(
-            &["proto/users/v1/users.proto"],
-            &["proto/users", "proto/vendor"],
+            &["proto/users/v1/users.proto", "proto/posts/v1/posts.proto"],
+            &["proto/users", "proto/posts", "proto/vendor"],
         )
         .unwrap();
 }

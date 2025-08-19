@@ -1,8 +1,7 @@
-use server::SmmServer;
+use server::run;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let server = SmmServer::new();
-    server.run().await?;
+    run().await?;
     Ok(())
 }

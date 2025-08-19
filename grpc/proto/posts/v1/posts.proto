@@ -1,0 +1,176 @@
+syntax = "proto3";
+
+package proto.posts.v1;
+
+import "google/protobuf/timestamp.proto";
+import "validate/validate.proto";
+
+// Сервис для управления постами в SMM-системе
+service PostsService {
+  // Создает новый пост
+  rpc CreatePost(CreatePostRequest) returns (CreatePostResponse);
+
+  // Возвращает пост по идентификатору
+  rpc GetPost(GetPostRequest) returns (GetPostResponse);
+
+  // Возвращает список постов с пагинацией
+  rpc ListPosts(ListPostsRequest) returns (ListPostsResponse);
+
+  // Обновляет существующий пост
+  rpc UpdatePost(UpdatePostRequest) returns (UpdatePostResponse);
+
+  // Удаляет пост
+  rpc DeletePost(DeletePostRequest) returns (DeletePostResponse);
+}
+
+// Сообщение, представляющее пост в системе
+message Post {
+  // Статусы поста
+  enum Status {
+    STATUS_DRAFT_UNSPECIFIED = 0; // Черновик
+    STATUS_PENDING = 1; // Ожидает публикации
+    STATUS_PUBLISHED = 2; // Опубликован
+    STATUS_ABANDONED = 3; // Отменен/Заброшен
+  }
+
+  // UUID поста в формате строки
+  string id = 1;
+
+  // Заголовок поста (обязательное поле)
+  // Минимальная длина: 1 символ, максимальная: 255 символов
+  string title = 2 [(validate.rules).string = {
+    min_len: 1
+    max_len: 255
+  }];
+
+  // Содержимое поста (обязательное поле)
+  // Минимальная длина: 1 символ, максимальная: 4096 символов
+  string content = 3 [(validate.rules).string = {
+    min_len: 1
+    max_len: 4096
+  }];
+
+  // Идентификатор фотофайла в Telegram (если прикреплено)
+  optional string tg_photo_file_id = 4;
+
+  // Идентификатор фотофайла в VK (если прикреплено)
+  optional string vk_photo_file_id = 5;
+
+  // Идентификатор видеофайла в Telegram (если прикреплено)
+  optional string tg_video_file_id = 6;
+
+  // Идентификатор видеофайла в VK (если прикреплено)
+  optional string vk_video_file_id = 7;
+
+  // Текущий статус поста
+  Status status = 8;
+
+  // Дата и время создания поста
+  google.protobuf.Timestamp created_at = 9;
+
+  // Запланированное время публикации (для отложенных постов)
+  optional google.protobuf.Timestamp publish_datetime = 10;
+
+  // Идентификатор автора поста (UUID пользователя)
+  string author_id = 11;
+}
+
+// Запрос на создание нового поста
+message CreatePostRequest {
+  // Идентификатор автора в Telegram
+  int64 author_tg_id = 1;
+
+  // Заголовок поста
+  string title = 2;
+
+  // Содержимое поста
+  string content = 3;
+
+  // Идентификатор фотофайла в Telegram
+  optional string tg_photo_file_id = 4;
+
+  // Идентификатор фотофайла в VK
+  optional string vk_photo_file_id = 5;
+
+  // Идентификатор видеофайла в Telegram
+  optional string tg_video_file_id = 6;
+
+  // Идентификатор видеофайла в VK
+  optional string vk_video_file_id = 7;
+
+  // Запланированное время публикации
+  optional google.protobuf.Timestamp publish_datetime = 8;
+}
+
+// Ответ на запрос создания поста
+message CreatePostResponse {
+  // Созданный пост
+  Post created_post = 1;
+}
+
+// Запрос на получение поста
+message GetPostRequest {
+  // UUID поста
+  string post_id = 1;
+}
+
+// Ответ на запрос получения поста
+message GetPostResponse {
+  // Найденный пост (отсутствует если пост не найден)
+  optional Post post = 1;
+}
+
+// Запрос на получение списка постов
+message ListPostsRequest {
+  // Идентификатор автора в Telegram для фильтрации
+  // Если 0 - возвращаются все посты (только для администраторов)
+  int64 author_tg_id = 1;
+
+  // Номер страницы (начинается с 1)
+  uint32 page = 2;
+
+  // Размер страницы (10-100)
+  uint32 page_size = 3 [(validate.rules).uint32 = {
+    gte: 10
+    lte: 100
+  }];
+}
+
+// Ответ на запрос списка постов
+message ListPostsResponse {
+  // Список постов
+  repeated Post posts = 1;
+
+  // Общее количество постов
+  uint32 total_count = 2;
+
+  // Текущая страница
+  uint32 current_page = 3;
+
+  // Общее количество страниц
+  uint32 total_pages = 4;
+}
+
+// Запрос на обновление поста
+message UpdatePostRequest {
+  // Обновленные данные поста
+  Post updated_post = 1;
+}
+
+// Ответ на запрос обновления поста
+message UpdatePostResponse {
+  // Обновленный пост
+  Post updated_post = 1;
+}
+
+// Запрос на удаление поста
+message DeletePostRequest {
+  // UUID поста для удаления
+  string post_id = 1;
+}
+
+// Ответ на запрос удаления поста
+message DeletePostResponse {
+  // Флаг успешного удаления
+  bool success = 1;
+}
