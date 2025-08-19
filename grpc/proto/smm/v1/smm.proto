@@ -85,8 +85,15 @@ message GetUserRoleRequest {
 
 // Ответ с информацией о роли пользователя
 message GetUserRoleResponse {
-  // Флаг, указывающий существует ли пользователь в системе
-  bool user_exists = 1;
   // Роль пользователя (актуально только если user_exists == true)
-  UserRole user_role = 2;
+  optional UserRole user_role = 1;
+}
+
+message ChangeUserRoleRequest {
+  int64 user_id = 1;
+  UserRole new_role = 2;
+}
+
+message ChangeUserRoleResponse {
+  optional User updated_user = 1;
 }

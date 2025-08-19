@@ -1,0 +1,171 @@
+syntax = "proto3";
+
+package proto.users.v1;
+
+import "google/protobuf/timestamp.proto";
+import "validate/validate.proto";
+
+// UsersService предоставляет CRUD-операции для управления пользователями системы
+service UsersService {
+  // Создает нового пользователя на основе данных из Telegram
+  rpc CreateUser(CreateUserRequest) returns (CreateUserResponse);
+  
+  // Получает информацию о пользователе по его Telegram ID
+  rpc GetUser(GetUserRequest) returns (GetUserResponse);
+  
+  // Возвращает список пользователей с возможностью пагинации
+  rpc ListUsers(ListUsersRequest) returns (ListUsersResponse);
+  
+  // Обновляет данные пользователя
+  rpc UpdateUser(UpdateUserRequest) returns (UpdateUserResponse);
+  
+  // Удаляет пользователя из системы
+  rpc DeleteUser(DeleteUserRequest) returns (DeleteUserResponse);
+}
+
+// Данные пользователя, полученные из Telegram
+message TelegramUser {
+  // Уникальный идентификатор пользователя в Telegram
+  // Должен быть положительным числом
+  int64 telegram_id = 1 [(validate.rules).int64.gt = 0];
+  
+  // Имя пользователя (обязательное поле в Telegram)
+  // Минимальная длина - 1 символ, максимальная - 64 символа
+  string first_name = 2[(validate.rules).string = {min_len: 1, max_len: 64}];
+  
+  // Фамилия пользователя (необязательное поле в Telegram)
+  optional string last_name = 3 [(validate.rules).string = {min_len: 1, max_len: 64, ignore_empty: true}];
+  
+  // Юзернейм пользователя в Telegram (без @)
+  // Должен соответствовать шаблону [a-zA-Z0-9_]{5,32}
+  optional string username = 4 [(validate.rules).string = {pattern: "^[a-zA-Z0-9_]{5,32}$", ignore_empty: true}];
+  
+  // Код языка пользователя в формате ISO 639-1 (например, "ru", "en")
+  optional string language_code = 5 [(validate.rules).string = {pattern: "^[a-z]{2}$", ignore_empty: true}];
+}
+
+// Роли пользователей в системе
+enum UserRole {
+  // Роль не определена (значение по умолчанию)
+  USER_ROLE_GUEST_UNSPECIFIED = 0;
+  
+  // Редактор - может создавать и управлять своим контентом
+  USER_ROLE_EDITOR = 1;
+  
+  // Администратор - полный доступ к системе
+  USER_ROLE_ADMIN = 2;
+}
+
+// Пользователь системы
+message User {
+  // UUID пользователя в формате строки (версия 4)
+  string id = 1;
+  
+  // Идентификатор пользователя в Telegram
+  int64 telegram_id = 2;
+  
+  // Основное имя пользователя
+  string first_name = 3;
+  
+  // Фамилия пользователя (если доступна)
+  optional string last_name = 4;
+  
+  // Юзернейм в Telegram (если установлен)
+  optional string username = 5;
+  
+  // Предпочитаемый язык пользователя
+  optional string language_code = 6;
+  
+  // Текущая роль пользователя в системе
+  UserRole role = 7;
+  
+  // Дата и время создания записи пользователя
+  google.protobuf.Timestamp created_at = 8;
+  
+  // Дата и время последнего обновления данных
+  google.protobuf.Timestamp updated_at = 9;
+  
+  // Дата и время последней активности пользователя
+  google.protobuf.Timestamp last_activity = 10;
+}
+
+// Запрос на регистрацию нового пользователя
+message CreateUserRequest {
+  // Данные пользователя из Telegram
+  TelegramUser new_user = 1;
+}
+
+// Ответ на запрос регистрации пользователя
+message CreateUserResponse {
+  // Созданная запись пользователя
+  User created_user = 1;
+}
+
+// Запрос на получение информации о пользователе
+message GetUserRequest {
+  // Идентификатор пользователя в Telegram
+  int64 user_id = 1;
+}
+
+// Ответ с информацией о пользователе
+message GetUserResponse {
+  // Данные пользователя (отсутствуют, если пользователь не найден)
+  optional User user = 1;
+}
+
+// Запрос на обновление данных пользователя
+message UpdateUserRequest {
+  // Идентификатор пользователя в Telegram
+  int64 user_id = 1;
+  
+  // Новые данные пользователя
+  User updated_user = 2;
+}
+
+// Ответ на запрос обновления пользователя
+message UpdateUserResponse {
+  // Обновленные данные пользователя (отсутствуют, если обновление не удалось)
+  optional User updated_user = 1;
+}
+
+// Запрос на удаление пользователя
+message DeleteUserRequest {
+  // Идентификатор пользователя в Telegram
+  int64 user_id = 1;
+}
+
+// Ответ на запрос удаления пользователя
+message DeleteUserResponse {
+  // Флаг успешного выполнения операции
+  bool success = 1;
+}
+
+// Запрос списка пользователей с пагинацией
+message ListUsersRequest {
+  // Номер страницы (начиная с 1)
+  uint32 page = 1;
+  
+  // Количество пользователей на странице (по умолчанию 20)
+  uint32 page_size = 2;
+  
+  // Фильтр по роли пользователя (необязательный)
+  optional UserRole role_filter = 3;
+  
+  // Сортировка (true - по возрастанию, false - по убыванию)
+  optional bool sort_by_created_asc = 4;
+}
+
+// Ответ со списком пользователей
+message ListUsersResponse {
+  // Найденные пользователи
+  repeated User users = 1;
+  
+  // Общее количество пользователей (для пагинации)
+  uint32 total_count = 2;
+  
+  // Номер текущей страницы
+  uint32 current_page = 3;
+  
+  // Общее количество страниц
+  uint32 total_pages = 4;
+}
