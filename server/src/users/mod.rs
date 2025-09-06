@@ -19,10 +19,19 @@ impl users::users_service_server::UsersService for AppUsersService {
         request: tonic::Request<users::CreateUserRequest>,
     ) -> tonic::Result<tonic::Response<users::CreateUserResponse>> {
         tracing::info!("received request");
-        let _ = request;
+        let u: shared::models::User =
+            request
+                .into_inner()
+                .try_into()
+                .map_err(|e: anyhow::Error| {
+                    tonic::Status::new(tonic::Code::InvalidArgument, e.to_string())
+                })?;
+        tracing::info!("{u:#?}");
+        let created_user = Some(u.into());
+
         tracing::debug!("sending response");
         Ok(tonic::Response::new(users::CreateUserResponse {
-            created_user: None,
+            created_user,
         }))
     }
 

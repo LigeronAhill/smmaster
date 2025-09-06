@@ -8,8 +8,20 @@ use users::AppUsersService;
 mod posts;
 mod users;
 
+use clap::Parser;
+
+#[derive(Parser)]
+#[command(name = "SMMaster server", version, about = "gRPC server for SMM telegram bot", long_about = None)]
+struct Cli {
+    /// Define port to serve
+    #[arg(short, long)]
+    port: Option<u16>,
+}
+
 pub async fn run() -> anyhow::Result<()> {
-    let addr = std::env::var("GRPC_SERVER_ADDR")?;
+    let cli = Cli::parse();
+    let port = cli.port.unwrap_or(50052);
+    let addr = format!("[::1]:{port}");
     let subscriber = tracing_subscriber::fmt()
         .pretty()
         .with_file(true)
