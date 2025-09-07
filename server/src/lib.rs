@@ -16,11 +16,17 @@ struct Cli {
     /// Define port to serve
     #[arg(short, long)]
     port: Option<u16>,
+    /// MongoDB URI
+    #[arg(short, long)]
+    database: Option<String>,
 }
 
 pub async fn run() -> anyhow::Result<()> {
     let cli = Cli::parse();
     let port = cli.port.unwrap_or(50052);
+    let mongo_db_uri = cli
+        .database
+        .unwrap_or(String::from("mongodb://localhost:27017"));
     let addr = format!("[::1]:{port}");
     let subscriber = tracing_subscriber::fmt()
         .pretty()
@@ -32,14 +38,16 @@ pub async fn run() -> anyhow::Result<()> {
 
     tracing::subscriber::set_global_default(subscriber)?;
     tracing::info!(message = "Starting server", %addr);
+    let db = storage::Storage::new(&mongo_db_uri).await?;
     let reflection_service_v1 = tonic_reflection::server::Builder::configure()
         .register_encoded_file_descriptor_set(smm::FILE_DESCRIPTOR_SET)
         .build_v1()?;
     let reflection_service_alpha = tonic_reflection::server::Builder::configure()
         .register_encoded_file_descriptor_set(smm::FILE_DESCRIPTOR_SET)
         .build_v1alpha()?;
-    let users_service = UsersServiceServer::with_interceptor(AppUsersService::new(), check_auth);
-    let posts_service = PostsServiceServer::with_interceptor(AppPostService::new(), check_auth);
+    let users_service =
+        UsersServiceServer::with_interceptor(AppUsersService::new(db.clone()), check_auth);
+    let posts_service = PostsServiceServer::with_interceptor(AppPostService::new(db), check_auth);
     tonic::transport::Server::builder()
         .trace_fn(|_| tracing::info_span!("smm"))
         .add_service(reflection_service_v1)

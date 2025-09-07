@@ -13,3 +13,4 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 clap = { workspace = true, features = ["derive"] }
 shared = { path = "../shared" }
+storage = { path = "../storage" }

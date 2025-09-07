@@ -1,3 +1,6 @@
+use std::fmt::Display;
+
+use bson::serde_helpers::{datetime, uuid_1};
 use chrono::{DateTime, Utc};
 use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
@@ -8,12 +11,15 @@ use uuid::Uuid;
 pub struct User {
     /// UUID пользователя в формате строки (версия 4)
     #[builder(try_setter,default = Uuid::new_v4())]
+    #[serde(rename = "_id")]
+    #[serde(with = "uuid_1::AsBinary")]
     pub id: Uuid,
 
     /// Идентификатор пользователя в Telegram
     pub telegram_id: i64,
 
     /// Основное имя пользователя
+    #[builder(setter(into))]
     pub first_name: String,
 
     /// Фамилия пользователя (если доступна)
@@ -33,18 +39,21 @@ pub struct User {
 
     /// Текущая роль пользователя в системе
     #[builder(try_setter, setter(into), default)]
-    pub role: UserRole,
+    pub role: Role,
 
     /// Дата и время создания записи пользователя
     #[builder(setter(custom), default = Utc::now())]
+    #[serde(with = "datetime::FromChrono04DateTime")]
     pub created_at: DateTime<Utc>,
 
     /// Дата и время последнего обновления данных
     #[builder(setter(custom), default = Utc::now())]
+    #[serde(with = "datetime::FromChrono04DateTime")]
     pub updated_at: DateTime<Utc>,
 
     /// Дата и время последней активности пользователя
     #[builder(setter(custom), default = Utc::now())]
+    #[serde(with = "datetime::FromChrono04DateTime")]
     pub last_activity: DateTime<Utc>,
 }
 impl User {
@@ -103,24 +112,22 @@ impl UserBuilder {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum UserRole {
+pub enum Role {
     /// Роль не определена (значение по умолчанию)
-    Guest = 0,
-
+    Guest,
     /// Редактор - может создавать и управлять своим контентом
-    Editor = 1,
-
+    Editor,
     /// Администратор - полный доступ к системе
-    Admin = 2,
+    Admin,
 }
 
-impl Default for UserRole {
+impl Default for Role {
     fn default() -> Self {
         Self::Guest
     }
 }
 
-impl TryFrom<i32> for UserRole {
+impl TryFrom<i32> for Role {
     type Error = String;
 
     fn try_from(value: i32) -> Result<Self, Self::Error> {
@@ -128,13 +135,40 @@ impl TryFrom<i32> for UserRole {
             0 => Ok(Self::Guest),
             1 => Ok(Self::Editor),
             2 => Ok(Self::Admin),
-            _ => Err(format!("Invalid role value: {}", value)),
+            _ => Err(format!("Invalid role value: {value}")),
         }
     }
 }
 
-impl From<UserRole> for i32 {
-    fn from(role: UserRole) -> Self {
+impl From<Role> for i32 {
+    fn from(role: Role) -> Self {
         role as i32
     }
+}
+impl Display for Role {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{self:?}")
+    }
+}
+impl From<String> for Role {
+    fn from(value: String) -> Self {
+        if Role::Admin.to_string() == value {
+            Self::Admin
+        } else if Role::Editor.to_string() == value {
+            Self::Editor
+        } else {
+            Self::default()
+        }
+    }
+}
+// Ответ на запрос списка пользователей
+pub struct ListUsersResult {
+    // Список пользователей
+    pub users: Vec<User>,
+    // Общее количество пользователей
+    pub total_count: u32,
+    // Текущая страница
+    pub current_page: u32,
+    // Общее количество страниц
+    pub total_pages: u32,
 }

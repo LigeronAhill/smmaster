@@ -11,6 +11,7 @@ tonic-prost = "0.14"
 validator = "0.20"
 shared = { path = "../shared" }
 anyhow.workspace = true
+chrono = { workspace = true, features = ["serde"] }
 
 [build-dependencies]
 tonic-prost-build = "0.14"

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["client", "grpc", "server", "shared"]
+members = ["client", "grpc", "server", "shared", "storage"]
 [workspace.dependencies]
 tokio = { version = "1", features = ["full"] }
 tonic = "0.14"
@@ -12,3 +12,4 @@ clap = { version = "4.5", features = ["derive"] }
 serde = { version = "1.0", features = ["derive"] }
 uuid = { version = "1.18", features = ["serde", "v4"] }
 chrono = { version = "0.4", features = ["serde"] }
+bson = { version = "3.0", features = ["uuid-1", "chrono-0_4"] }
