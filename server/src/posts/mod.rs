@@ -95,13 +95,14 @@ impl posts::posts_service_server::PostsService for AppPostService {
             .ok_or(tonic::Status::not_found("author not found"))?;
         let page = l.page;
         let page_size = l.page_size;
+        let filter = l.status_filter.and_then(|s| s.try_into().ok());
         if page == 0 || page_size < 10 || page_size > 100 {
             return Err(tonic::Status::invalid_argument("wrong page or page_size"));
         }
         let resp = self
             .db
             .posts()
-            .list_posts(author_id, page, page_size)
+            .list_posts(author_id, page, page_size, filter)
             .await
             .map_err(|e| tonic::Status::internal(e.to_string()))?
             .into();

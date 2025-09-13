@@ -129,8 +129,11 @@ message ListPostsRequest {
   // Номер страницы (начинается с 1)
   uint32 page = 2;
 
+  // Фильтр по роли пользователя (необязательный)
+  optional Post.Status status_filter = 3;
+
   // Размер страницы (10-100)
-  uint32 page_size = 3 [(validate.rules).uint32 = {
+  uint32 page_size = 4 [(validate.rules).uint32 = {
     gte: 10
     lte: 100
   }];

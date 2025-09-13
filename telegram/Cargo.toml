@@ -1,16 +1,16 @@
 [package]
-name = "client"
+name = "telegram"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+teloxide = { version = "0.17.0", features = ["macros"] }
 tokio = { workspace = true, features = ["full"] }
-tonic.workspace = true
-tonic-reflection = "0.14"
-grpc = { path = "../grpc" }
-anyhow.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 shared = { path = "../shared" }
-chrono = { workspace = true, features = ["serde"] }
+client = { path = "../client" }
+anyhow.workspace = true
+clap = { workspace = true, features = ["derive"] }
 uuid = { workspace = true, features = ["serde", "v4"] }
+chrono = { workspace = true, features = ["serde"] }

@@ -1,7 +1,7 @@
 use anyhow::{Result, anyhow};
 use bson::doc;
 use futures::TryStreamExt;
-use shared::models::{ListPostsResult, Post};
+use shared::models::{ListPostsResult, Post, Status};
 use uuid::Uuid;
 const POSTS_COLLECTION: &str = "posts";
 
@@ -29,16 +29,28 @@ impl PostsStorage {
         author_id: Uuid,
         page: u32,
         page_size: u32,
+        status_filter: Option<Status>,
     ) -> Result<ListPostsResult> {
         let mut result = Vec::new();
-        let filter = doc! {
-            "author_id": author_id,
+        let filter = match status_filter {
+            Some(status) => {
+                doc! {
+                    "author_id": author_id,
+                    "status": status.to_string(),
+                }
+            }
+            None => {
+                doc! {
+                    "author_id": author_id,
+                }
+            }
         };
+
         let total_count = self.collection.count_documents(filter.clone()).await?;
         let total_pages = if total_count == 0 {
             0
         } else {
-            ((total_count as f64 - 1.0) / page_size as f64).ceil() as u32 + 1
+            ((total_count as f64) / page_size as f64).ceil() as u32
         };
         let offset = (page - 1) * page_size;
         let mut cursor = self

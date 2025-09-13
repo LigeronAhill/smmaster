@@ -45,7 +45,7 @@ impl UsersStorage {
         let total_pages = if total_count == 0 {
             0
         } else {
-            ((total_count as f64 - 1.0) / page_size as f64).ceil() as u32 + 1
+            ((total_count as f64) / page_size as f64).ceil() as u32
         };
         let offset = (page - 1) * page_size;
         let mut cursor = self

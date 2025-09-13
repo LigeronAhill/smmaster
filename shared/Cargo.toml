@@ -7,7 +7,7 @@ edition = "2024"
 serde = { workspace = true, features = ["derive"] }
 uuid = { workspace = true, features = ["serde", "v4"] }
 chrono = { workspace = true, features = ["serde"] }
-bson = { workspace = true, features = ["uuid-1", "chrono-0_4"] }
+bson = { workspace = true, features = ["uuid-1", "chrono-0_4", "serde"] }
 derive_builder = "0.20"
 anyhow.workspace = true
 regex = "1.11"

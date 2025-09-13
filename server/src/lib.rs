@@ -19,6 +19,9 @@ struct Cli {
     /// MongoDB URI
     #[arg(short, long)]
     database: Option<String>,
+    /// Bearer token
+    #[arg(short, long)]
+    bearer: Option<String>,
 }
 
 pub async fn run() -> anyhow::Result<()> {
@@ -27,6 +30,7 @@ pub async fn run() -> anyhow::Result<()> {
     let mongo_db_uri = cli
         .database
         .unwrap_or(String::from("mongodb://localhost:27017"));
+    let bearer = cli.bearer.unwrap_or("some-secret-token".into());
     let addr = format!("[::1]:{port}");
     let subscriber = tracing_subscriber::fmt()
         .pretty()
@@ -38,6 +42,12 @@ pub async fn run() -> anyhow::Result<()> {
 
     tracing::subscriber::set_global_default(subscriber)?;
     tracing::info!(message = "Starting server", %addr);
+    let token: tonic::metadata::MetadataValue<_> = format!("Bearer {bearer}").parse()?;
+
+    let check_auth = move |req: tonic::Request<()>| match req.metadata().get("authorization") {
+        Some(t) if token == t => Ok(req),
+        _ => Err(tonic::Status::unauthenticated("No valid auth token")),
+    };
     let db = storage::Storage::new(&mongo_db_uri).await?;
     let reflection_service_v1 = tonic_reflection::server::Builder::configure()
         .register_encoded_file_descriptor_set(smm::FILE_DESCRIPTOR_SET)
@@ -46,7 +56,7 @@ pub async fn run() -> anyhow::Result<()> {
         .register_encoded_file_descriptor_set(smm::FILE_DESCRIPTOR_SET)
         .build_v1alpha()?;
     let users_service =
-        UsersServiceServer::with_interceptor(AppUsersService::new(db.clone()), check_auth);
+        UsersServiceServer::with_interceptor(AppUsersService::new(db.clone()), check_auth.clone());
     let posts_service = PostsServiceServer::with_interceptor(AppPostService::new(db), check_auth);
     tonic::transport::Server::builder()
         .trace_fn(|_| tracing::info_span!("smm"))
@@ -57,13 +67,4 @@ pub async fn run() -> anyhow::Result<()> {
         .serve(addr.parse()?)
         .await?;
     Ok(())
-}
-
-fn check_auth(req: tonic::Request<()>) -> tonic::Result<tonic::Request<()>> {
-    let token: tonic::metadata::MetadataValue<_> = "Bearer some-secret-token".parse().unwrap();
-
-    match req.metadata().get("authorization") {
-        Some(t) if token == t => Ok(req),
-        _ => Err(tonic::Status::unauthenticated("No valid auth token")),
-    }
 }
