@@ -5,13 +5,11 @@ use client::Client;
 use dptree::case;
 use shared::models::{Role, Status};
 use teloxide::{
-    dispatching::DpHandlerDescription,
-    prelude::*,
-    sugar::bot::BotMessagesExt,
-    types::{InputFile, KeyboardRemove},
+    dispatching::DpHandlerDescription, prelude::*, sugar::bot::BotMessagesExt,
+    types::KeyboardRemove,
 };
 
-use crate::{MyCallback, MyDialogue, TextCommand, moscow};
+use crate::{MyCallback, MyDialogue, TextCommand, moscow, send_post};
 
 pub(super) fn router() -> Handler<'static, Result<()>, DpHandlerDescription> {
     Update::filter_callback_query()
@@ -263,54 +261,7 @@ async fn posts_page(
                         shared::models::Status::Abandoned => (Vec::new(), false),
                     };
                     for post in posts {
-                        let text = match status {
-                            shared::models::Status::Pending => {
-                                format!(
-                                    "<b>{title}</b>\n{content}\nОпубликую: {date}",
-                                    title = post.title,
-                                    content = post.content,
-                                    date = moscow(post.publish_datetime.unwrap_or_default()),
-                                )
-                            }
-                            shared::models::Status::Published => {
-                                format!(
-                                    "<b>{title}</b>\n{content}\nОпубликован: {date}",
-                                    title = post.title,
-                                    content = post.content,
-                                    date = moscow(post.publish_datetime.unwrap_or_default()),
-                                )
-                            }
-                            _ => {
-                                format!(
-                                    "<b>{title}</b>\n{content}",
-                                    title = post.title,
-                                    content = post.content
-                                )
-                            }
-                        };
-                        let post_id = post.id;
-                        let mu = if status != Status::Published {
-                            MyCallback::not_published_kb(post_id)
-                        } else {
-                            MyCallback::published_kb(post_id)
-                        };
-                        match post.tg_photo_file_id {
-                            Some(file_id) => {
-                                let photo = InputFile::file_id(file_id.into());
-                                bot.send_photo(msg.chat.id, photo)
-                                    .caption(text)
-                                    .reply_markup(mu)
-                                    .parse_mode(teloxide::types::ParseMode::Html)
-                                    .await?;
-                            }
-                            None => {
-                                // TODO: video?
-                                bot.send_message(msg.chat.id, text)
-                                    .reply_markup(mu)
-                                    .parse_mode(teloxide::types::ParseMode::Html)
-                                    .await?;
-                            }
-                        }
+                        send_post(&bot, msg, &post).await?;
                     }
                     if page != 1 {
                         if has_next {
@@ -368,30 +319,7 @@ async fn users_drafts(
             if let MyCallback::Drafts { author_id } = cb {
                 let (posts, has_next) = rpc_client.drafts(author_id, 1).await?;
                 for post in posts {
-                    let text = format!(
-                        "<b>{title}</b>\n{content}",
-                        title = post.title,
-                        content = post.content
-                    );
-                    let post_id = post.id;
-                    let mu = MyCallback::not_published_kb(post_id);
-                    match post.tg_photo_file_id {
-                        Some(file_id) => {
-                            let photo = InputFile::file_id(file_id.into());
-                            bot.send_photo(msg.chat.id, photo)
-                                .caption(text)
-                                .reply_markup(mu)
-                                .parse_mode(teloxide::types::ParseMode::Html)
-                                .await?;
-                        }
-                        None => {
-                            // TODO: video?
-                            bot.send_message(msg.chat.id, text)
-                                .reply_markup(mu)
-                                .parse_mode(teloxide::types::ParseMode::Html)
-                                .await?;
-                        }
-                    }
+                    send_post(&bot, msg, &post).await?;
                 }
                 if has_next {
                     bot.send_message(msg.chat.id, "Это не все")
@@ -429,31 +357,7 @@ async fn users_pending(
             if let MyCallback::Pending { author_id } = cb {
                 let (posts, has_next) = rpc_client.pending(author_id, 1).await?;
                 for post in posts {
-                    let text = format!(
-                        "<b>{title}</b>\n{content}\nОпубликую: {date}",
-                        title = post.title,
-                        content = post.content,
-                        date = moscow(post.publish_datetime.unwrap_or_default()),
-                    );
-                    let post_id = post.id;
-                    let mu = MyCallback::not_published_kb(post_id);
-                    match post.tg_photo_file_id {
-                        Some(file_id) => {
-                            let photo = InputFile::file_id(file_id.into());
-                            bot.send_photo(msg.chat.id, photo)
-                                .caption(text)
-                                .reply_markup(mu)
-                                .parse_mode(teloxide::types::ParseMode::Html)
-                                .await?;
-                        }
-                        None => {
-                            // TODO: video?
-                            bot.send_message(msg.chat.id, text)
-                                .reply_markup(mu)
-                                .parse_mode(teloxide::types::ParseMode::Html)
-                                .await?;
-                        }
-                    }
+                    send_post(&bot, msg, &post).await?;
                 }
                 if has_next {
                     bot.send_message(msg.chat.id, "Это не все")
@@ -491,31 +395,7 @@ async fn users_published(
             if let MyCallback::Published { author_id } = cb {
                 let (posts, has_next) = rpc_client.published(author_id, 1).await?;
                 for post in posts {
-                    let text = format!(
-                        "<b>{title}</b>\n{content}\nОпубликован: {date}",
-                        title = post.title,
-                        content = post.content,
-                        date = moscow(post.publish_datetime.unwrap_or_default()),
-                    );
-                    let post_id = post.id;
-                    let mu = MyCallback::published_kb(post_id);
-                    match post.tg_photo_file_id {
-                        Some(file_id) => {
-                            let photo = InputFile::file_id(file_id.into());
-                            bot.send_photo(msg.chat.id, photo)
-                                .caption(text)
-                                .reply_markup(mu)
-                                .parse_mode(teloxide::types::ParseMode::Html)
-                                .await?;
-                        }
-                        None => {
-                            // TODO: video?
-                            bot.send_message(msg.chat.id, text)
-                                .reply_markup(mu)
-                                .parse_mode(teloxide::types::ParseMode::Html)
-                                .await?;
-                        }
-                    }
+                    send_post(&bot, msg, &post).await?;
                 }
                 if has_next {
                     bot.send_message(msg.chat.id, "Это не все")
@@ -551,8 +431,9 @@ async fn publish_post(
             .unwrap_or(Role::Guest);
         if role != Role::Guest {
             if let MyCallback::PublishNow { id } = cb {
+                let now = chrono::Utc::now();
                 let post = rpc_client
-                    .publish_now(id)
+                    .set_publish_date(id, now)
                     .await?
                     .ok_or(anyhow!("Error publishing post"))?;
                 let text = format!(
@@ -563,13 +444,14 @@ async fn publish_post(
                 );
                 let mu = MyCallback::published_kb(post.id);
                 if bot
-                    .edit_message_text(msg.chat.id, msg.id, text)
+                    .edit_message_text(msg.chat.id, msg.id, &text)
                     .reply_markup(mu.clone())
                     .parse_mode(teloxide::types::ParseMode::Html)
                     .await
                     .is_err()
                 {
                     bot.edit_caption(msg)
+                        .caption(text)
                         .reply_markup(mu)
                         .parse_mode(teloxide::types::ParseMode::Html)
                         .await?;

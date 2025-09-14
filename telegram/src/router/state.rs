@@ -2,10 +2,10 @@ use anyhow::{Result, anyhow};
 use client::Client;
 use dptree::case;
 use shared::models::Role;
-use teloxide::{dispatching::DpHandlerDescription, prelude::*, types::InputFile};
+use teloxide::{dispatching::DpHandlerDescription, prelude::*};
 use tracing::instrument;
 
-use crate::{MyCallback, MyDialogue, State, TextCommand, moscow, to_utc};
+use crate::{MyCallback, MyDialogue, State, TextCommand, send_post, to_utc};
 
 pub(super) fn router() -> Handler<'static, Result<()>, DpHandlerDescription> {
     Update::filter_message()
@@ -129,43 +129,7 @@ async fn media_received(
                         vk_video_file_id,
                     )
                     .await?;
-                let text = format!(
-                    "<b>{title}</b>\n{content}",
-                    title = post.title,
-                    content = post.content
-                );
-                let post_id = post.id;
-                tracing::info!(
-                    "Post ID: {post_id} size: {len}",
-                    len = post_id.to_string().len()
-                );
-                let mu = MyCallback::not_published_kb(post_id);
-
-                match post.tg_photo_file_id {
-                    Some(file_id) => {
-                        let photo = InputFile::file_id(file_id.into());
-                        bot.send_photo(msg.chat.id, photo.clone())
-                            .caption(text.clone())
-                            .parse_mode(teloxide::types::ParseMode::Html)
-                            .reply_markup(mu)
-                            .await?;
-                    }
-                    None => {
-                        // TODO: video?
-                        bot.send_message(msg.chat.id, text)
-                            .reply_markup(mu)
-                            .parse_mode(teloxide::types::ParseMode::Html)
-                            .await?;
-                    }
-                }
-                let markup = if role == Role::Admin {
-                    TextCommand::admin_keyboard()
-                } else {
-                    TextCommand::editor_keyboard()
-                };
-                bot.send_message(msg.chat.id, "Чем еще могу помочь?")
-                    .reply_markup(markup)
-                    .await?;
+                send_post(&bot, &msg, &post).await?;
             }
         } else {
             bot.send_message(msg.chat.id, "У вас нет доступа")
@@ -198,38 +162,7 @@ async fn publish_date_received(
                         .set_publish_date(post_id, date)
                         .await?
                         .ok_or(anyhow!("Error setting post publish date"))?;
-                    let text = format!(
-                        "<b>{title}</b>\n{content}\nОпубликую: {date}",
-                        title = post.title,
-                        content = post.content,
-                        date = moscow(post.publish_datetime.unwrap_or_default()),
-                    );
-                    let mu = MyCallback::not_published_kb(post.id);
-                    match post.tg_photo_file_id {
-                        Some(file_id) => {
-                            let photo = InputFile::file_id(file_id.into());
-                            bot.send_photo(msg.chat.id, photo)
-                                .caption(text)
-                                .parse_mode(teloxide::types::ParseMode::Html)
-                                .reply_markup(mu)
-                                .await?;
-                        }
-                        None => {
-                            // TODO: video?
-                            bot.send_message(msg.chat.id, text)
-                                .reply_markup(mu)
-                                .parse_mode(teloxide::types::ParseMode::Html)
-                                .await?;
-                        }
-                    }
-                    let m = if role == Role::Admin {
-                        TextCommand::admin_keyboard()
-                    } else {
-                        TextCommand::editor_keyboard()
-                    };
-                    bot.send_message(msg.chat.id, "Готово")
-                        .reply_markup(m)
-                        .await?;
+                    send_post(&bot, &msg, &post).await?;
                 }
             }
         } else {

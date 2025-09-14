@@ -90,7 +90,7 @@ async fn start(bot: Bot, msg: Message, mut rpc_client: client::Client) -> Result
     Ok(())
 }
 
-async fn help(bot: Bot, msg: Message, _channel_id: ChatId) -> Result<()> {
+async fn help(bot: Bot, msg: Message) -> Result<()> {
     bot.send_message(msg.chat.id, Command::descriptions().to_string())
         .await?;
     Ok(())

@@ -1,6 +1,8 @@
 mod commands;
 pub use commands::Command;
 mod state;
+use publisher::Publisher;
+use shared::models::{Post, Status};
 pub use state::State;
 mod callback;
 pub use callback::MyCallback;
@@ -10,12 +12,8 @@ mod router;
 use anyhow::Result;
 use clap::Parser;
 use teloxide::{
-    dispatching::dialogue::InMemStorage,
-    dptree::deps,
-    payloads::DeleteWebhookSetters,
-    prelude::{Dialogue, Dispatcher, LoggingErrorHandler, Requester},
-    types::ChatId,
-    utils::command::BotCommands,
+    dispatching::dialogue::InMemStorage, dptree::deps, payloads::DeleteWebhookSetters, prelude::*,
+    types::InputFile, utils::command::BotCommands,
 };
 
 #[derive(Parser)]
@@ -32,7 +30,7 @@ struct Cli {
     tgtoken: String,
     /// Telegram channel id
     #[arg(long)]
-    tgchannel: String,
+    tgchannel: i64,
     /// VK access token
     #[arg(long)]
     vktoken: String,
@@ -52,8 +50,7 @@ async fn main() -> Result<()> {
     let port = cli.port.unwrap_or(50052);
     let bearer = cli.bearer.unwrap_or("some-secret-token".into());
     let tg_token = cli.tgtoken;
-    let tg_channel = format!("-{}", cli.tgchannel);
-    let channel_id = ChatId(tg_channel.parse()?);
+    let tg_channel = cli.tgchannel * -1;
     let vk_token = cli.vktoken;
     let vk_group = cli.vkgroup;
 
@@ -69,9 +66,14 @@ async fn main() -> Result<()> {
     // vk
     let _ = (vk_token, vk_group);
 
+    // publisher
+
+    let publisher = Publisher::new(bot.clone(), tg_channel, rpc_client.clone());
+    tokio::spawn(publisher.run());
+
     // bot
     Dispatcher::builder(bot, router::master())
-        .dependencies(deps![InMemStorage::<State>::new(), rpc_client, channel_id])
+        .dependencies(deps![InMemStorage::<State>::new(), rpc_client])
         .default_handler(|upd| async move {
             tracing::warn!("Unhandled update: {upd:?}");
         })
@@ -97,4 +99,58 @@ pub fn to_utc(string: &str) -> Result<chrono::DateTime<chrono::Utc>> {
     let moscow_offset = chrono::FixedOffset::east_opt(3 * 60 * 60).unwrap();
     let moscow_dt = moscow_offset.from_local_datetime(&naive_dt).unwrap();
     Ok(moscow_dt.with_timezone(&chrono::Utc))
+}
+
+pub async fn send_post(bot: &Bot, msg: &Message, post: &Post) -> Result<()> {
+    let text = match post.status {
+        shared::models::Status::Pending => {
+            format!(
+                "<b>{title}</b>\n{content}\nОпубликую: <code>{date}</code>",
+                title = post.title,
+                content = post.content,
+                date = moscow(post.publish_datetime.unwrap_or_default()),
+            )
+        }
+        shared::models::Status::Published => {
+            format!(
+                "<b>{title}</b>\n{content}\nОпубликован: <code>{date}</code>",
+                title = post.title,
+                content = post.content,
+                date = moscow(post.publish_datetime.unwrap_or_default()),
+            )
+        }
+        _ => {
+            format!(
+                "<b>{title}</b>\n{content}",
+                title = post.title,
+                content = post.content
+            )
+        }
+    };
+    let mu = if post.status == Status::Published {
+        MyCallback::published_kb(post.id)
+    } else {
+        MyCallback::not_published_kb(post.id)
+    };
+    if let Some(p) = post.tg_photo_file_id.as_ref() {
+        let photo = InputFile::file_id(p.to_string().into());
+        bot.send_photo(msg.chat.id, photo)
+            .caption(text)
+            .reply_markup(mu)
+            .parse_mode(teloxide::types::ParseMode::Html)
+            .await?;
+    } else if let Some(v) = post.tg_video_file_id.as_ref() {
+        let video = InputFile::file_id(v.to_string().into());
+        bot.send_video(msg.chat.id, video)
+            .caption(text)
+            .reply_markup(mu)
+            .parse_mode(teloxide::types::ParseMode::Html)
+            .await?;
+    } else {
+        bot.send_message(msg.chat.id, text)
+            .reply_markup(mu)
+            .parse_mode(teloxide::types::ParseMode::Html)
+            .await?;
+    }
+    Ok(())
 }

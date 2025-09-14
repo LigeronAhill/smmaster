@@ -4,13 +4,9 @@ use anyhow::Result;
 use client::Client;
 use dptree::case;
 use shared::models::{Role, Status};
-use teloxide::{
-    dispatching::DpHandlerDescription,
-    prelude::*,
-    types::{InputFile, KeyboardRemove},
-};
+use teloxide::{dispatching::DpHandlerDescription, prelude::*, types::KeyboardRemove};
 
-use crate::{moscow, MyCallback, MyDialogue, TextCommand};
+use crate::{MyCallback, MyDialogue, TextCommand, send_post};
 
 pub(super) fn router() -> Handler<'static, Result<()>, DpHandlerDescription> {
     Update::filter_message()
@@ -86,7 +82,7 @@ async fn new_post(
     Ok(())
 }
 async fn drafts(bot: Bot, msg: Message, mut rpc_client: Client) -> Result<()> {
-    if let Some(from) = msg.from {
+    if let Some(from) = msg.from.as_ref() {
         let id = from.id.0.try_into()?;
         let role = rpc_client
             .get_user(id)
@@ -96,30 +92,7 @@ async fn drafts(bot: Bot, msg: Message, mut rpc_client: Client) -> Result<()> {
         if role != Role::Guest {
             let (posts, has_next) = rpc_client.drafts(id, 1).await?;
             for post in posts {
-                let text = format!(
-                    "<b>{title}</b>\n{content}",
-                    title = post.title,
-                    content = post.content
-                );
-                let post_id = post.id;
-                let mu = MyCallback::not_published_kb(post_id);
-                match post.tg_photo_file_id {
-                    Some(file_id) => {
-                        let photo = InputFile::file_id(file_id.into());
-                        bot.send_photo(msg.chat.id, photo)
-                            .caption(text)
-                            .reply_markup(mu)
-                            .parse_mode(teloxide::types::ParseMode::Html)
-                            .await?;
-                    }
-                    None => {
-                        // TODO: video?
-                        bot.send_message(msg.chat.id, text)
-                            .reply_markup(mu)
-                            .parse_mode(teloxide::types::ParseMode::Html)
-                            .await?;
-                    }
-                }
+                send_post(&bot, &msg, &post).await?;
             }
             if has_next {
                 bot.send_message(msg.chat.id, "Это не все")
@@ -140,7 +113,7 @@ async fn drafts(bot: Bot, msg: Message, mut rpc_client: Client) -> Result<()> {
     Ok(())
 }
 async fn pending(bot: Bot, msg: Message, mut rpc_client: Client) -> Result<()> {
-    if let Some(from) = msg.from {
+    if let Some(from) = msg.from.as_ref() {
         let id = from.id.0.try_into()?;
         let role = rpc_client
             .get_user(id)
@@ -150,31 +123,7 @@ async fn pending(bot: Bot, msg: Message, mut rpc_client: Client) -> Result<()> {
         if role != Role::Guest {
             let (posts, has_next) = rpc_client.pending(id, 1).await?;
             for post in posts {
-                let text = format!(
-                    "<b>{title}</b>\n{content}\nОпубликую: {date}",
-                    title = post.title,
-                    content = post.content,
-                    date = moscow(post.publish_datetime.unwrap_or_default()),
-                );
-                let post_id = post.id;
-                let mu = MyCallback::not_published_kb(post_id);
-                match post.tg_photo_file_id {
-                    Some(file_id) => {
-                        let photo = InputFile::file_id(file_id.into());
-                        bot.send_photo(msg.chat.id, photo)
-                            .caption(text)
-                            .parse_mode(teloxide::types::ParseMode::Html)
-                            .reply_markup(mu)
-                            .await?;
-                    }
-                    None => {
-                        // TODO: video?
-                        bot.send_message(msg.chat.id, text)
-                            .reply_markup(mu)
-                            .parse_mode(teloxide::types::ParseMode::Html)
-                            .await?;
-                    }
-                }
+                send_post(&bot, &msg, &post).await?;
             }
             if has_next {
                 bot.send_message(msg.chat.id, "Это не все")
@@ -195,7 +144,7 @@ async fn pending(bot: Bot, msg: Message, mut rpc_client: Client) -> Result<()> {
     Ok(())
 }
 async fn published(bot: Bot, msg: Message, mut rpc_client: Client) -> Result<()> {
-    if let Some(from) = msg.from {
+    if let Some(from) = msg.from.as_ref() {
         let id = from.id.0.try_into()?;
         let role = rpc_client
             .get_user(id)
@@ -205,31 +154,7 @@ async fn published(bot: Bot, msg: Message, mut rpc_client: Client) -> Result<()>
         if role != Role::Guest {
             let (posts, has_next) = rpc_client.published(id, 1).await?;
             for post in posts {
-                let text = format!(
-                    "<b>{title}</b>\n{content}\nОпубликован: {date}",
-                    title = post.title,
-                    content = post.content,
-                    date = moscow(post.publish_datetime.unwrap_or_default()),
-                );
-                let post_id = post.id;
-                let mu = MyCallback::published_kb(post_id);
-                match post.tg_photo_file_id {
-                    Some(file_id) => {
-                        let photo = InputFile::file_id(file_id.into());
-                        bot.send_photo(msg.chat.id, photo)
-                            .caption(text)
-                            .reply_markup(mu)
-                            .parse_mode(teloxide::types::ParseMode::Html)
-                            .await?;
-                    }
-                    None => {
-                        // TODO: video?
-                        bot.send_message(msg.chat.id, text)
-                            .reply_markup(mu)
-                            .parse_mode(teloxide::types::ParseMode::Html)
-                            .await?;
-                    }
-                }
+                send_post(&bot, &msg, &post).await?;
             }
             if has_next {
                 bot.send_message(msg.chat.id, "Это не все")
