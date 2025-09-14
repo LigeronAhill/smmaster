@@ -84,3 +84,17 @@ async fn main() -> Result<()> {
         .await;
     Ok(())
 }
+
+pub fn moscow(dt: chrono::DateTime<chrono::Utc>) -> String {
+    let moscow_offset = chrono::FixedOffset::east_opt(3 * 60 * 60).unwrap();
+    let moscow_dt = dt.with_timezone(&moscow_offset);
+    let string = moscow_dt.format("%d-%m-%Y %H:%M:%S");
+    format!("{string}")
+}
+pub fn to_utc(string: &str) -> Result<chrono::DateTime<chrono::Utc>> {
+    use chrono::TimeZone;
+    let naive_dt = chrono::NaiveDateTime::parse_from_str(string, "%Y-%m-%d %H:%M")?;
+    let moscow_offset = chrono::FixedOffset::east_opt(3 * 60 * 60).unwrap();
+    let moscow_dt = moscow_offset.from_local_datetime(&naive_dt).unwrap();
+    Ok(moscow_dt.with_timezone(&chrono::Utc))
+}

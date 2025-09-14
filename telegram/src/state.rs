@@ -1,13 +1,18 @@
+use uuid::Uuid;
+
 #[derive(Clone, Default)]
 pub enum State {
     #[default]
     Start,
-    TitleReceived,
-    ContentReceived {
+    TitleReceive,
+    ContentReceive {
         title: String,
     },
-    MediaReceived {
+    MediaReceive {
         title: String,
         content: String,
+    },
+    PublishDateReceive {
+        post_id: Uuid,
     },
 }

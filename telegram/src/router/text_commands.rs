@@ -10,7 +10,7 @@ use teloxide::{
     types::{InputFile, KeyboardRemove},
 };
 
-use crate::{MyCallback, MyDialogue, TextCommand};
+use crate::{moscow, MyCallback, MyDialogue, TextCommand};
 
 pub(super) fn router() -> Handler<'static, Result<()>, DpHandlerDescription> {
     Update::filter_message()
@@ -76,7 +76,7 @@ async fn new_post(
             bot.send_message(msg.chat.id, "Пришлите название поста")
                 .reply_markup(MyCallback::cancel_button())
                 .await?;
-            dialogue.update(crate::State::TitleReceived).await?;
+            dialogue.update(crate::State::TitleReceive).await?;
         } else {
             bot.send_message(msg.chat.id, "У вас нет доступа")
                 .reply_markup(TextCommand::guest_keyboard())
@@ -154,7 +154,7 @@ async fn pending(bot: Bot, msg: Message, mut rpc_client: Client) -> Result<()> {
                     "<b>{title}</b>\n{content}\nОпубликую: {date}",
                     title = post.title,
                     content = post.content,
-                    date = post.publish_datetime.unwrap_or_default().to_rfc3339(),
+                    date = moscow(post.publish_datetime.unwrap_or_default()),
                 );
                 let post_id = post.id;
                 let mu = MyCallback::not_published_kb(post_id);
@@ -209,7 +209,7 @@ async fn published(bot: Bot, msg: Message, mut rpc_client: Client) -> Result<()>
                     "<b>{title}</b>\n{content}\nОпубликован: {date}",
                     title = post.title,
                     content = post.content,
-                    date = post.publish_datetime.unwrap_or_default().to_rfc3339(),
+                    date = moscow(post.publish_datetime.unwrap_or_default()),
                 );
                 let post_id = post.id;
                 let mu = MyCallback::published_kb(post_id);

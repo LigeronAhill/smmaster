@@ -4,9 +4,14 @@ use anyhow::{Result, anyhow};
 use client::Client;
 use dptree::case;
 use shared::models::{Role, Status};
-use teloxide::{dispatching::DpHandlerDescription, prelude::*, types::InputFile};
+use teloxide::{
+    dispatching::DpHandlerDescription,
+    prelude::*,
+    sugar::bot::BotMessagesExt,
+    types::{InputFile, KeyboardRemove},
+};
 
-use crate::{MyCallback, MyDialogue, TextCommand};
+use crate::{MyCallback, MyDialogue, TextCommand, moscow};
 
 pub(super) fn router() -> Handler<'static, Result<()>, DpHandlerDescription> {
     Update::filter_callback_query()
@@ -14,10 +19,16 @@ pub(super) fn router() -> Handler<'static, Result<()>, DpHandlerDescription> {
             let callback_str = q.data?;
             MyCallback::from_str(&callback_str).ok()
         })
+        // Users
         .branch(case![MyCallback::MakeUserEditor { id }].endpoint(make_editor))
         .branch(case![MyCallback::MakeUserGuest { id }].endpoint(make_guest))
         .branch(case![MyCallback::DeleteUser { id }].endpoint(delete_user))
-        .branch(case![MyCallback::Cancel].endpoint(cancel))
+        .branch(case![MyCallback::Drafts { author_id }].endpoint(users_drafts))
+        .branch(case![MyCallback::Pending { author_id }].endpoint(users_pending))
+        .branch(case![MyCallback::Published { author_id }].endpoint(users_published))
+        // Posts
+        .branch(case![MyCallback::PublishNow { id }].endpoint(publish_post))
+        .branch(case![MyCallback::SetPublishDate { id }].endpoint(set_publish_date))
         .branch(case![MyCallback::DeletePost { id }].endpoint(delete_post))
         .branch(
             case![MyCallback::PostsNextPage {
@@ -27,6 +38,16 @@ pub(super) fn router() -> Handler<'static, Result<()>, DpHandlerDescription> {
             }]
             .endpoint(posts_page),
         )
+        .branch(
+            case![MyCallback::PostsPreviousPage {
+                author_id,
+                status,
+                page
+            }]
+            .endpoint(posts_page),
+        )
+        // Cancel
+        .branch(case![MyCallback::Cancel].endpoint(cancel))
 }
 async fn make_editor(
     bot: Bot,
@@ -65,6 +86,10 @@ async fn make_editor(
                     .reply_markup(mu)
                     .await?;
             }
+        } else {
+            bot.send_message(msg.chat.id, "У вас нет доступа")
+                .reply_markup(TextCommand::guest_keyboard())
+                .await?;
         }
     }
     Ok(())
@@ -106,6 +131,10 @@ async fn make_guest(
                     .reply_markup(mu)
                     .await?;
             }
+        } else {
+            bot.send_message(msg.chat.id, "У вас нет доступа")
+                .reply_markup(TextCommand::guest_keyboard())
+                .await?;
         }
     }
     Ok(())
@@ -136,6 +165,10 @@ async fn delete_user(
                     bot.delete_message(msg.chat.id, msg.id).await?;
                 }
             }
+        } else {
+            bot.send_message(msg.chat.id, "У вас нет доступа")
+                .reply_markup(TextCommand::guest_keyboard())
+                .await?;
         }
     }
     Ok(())
@@ -185,6 +218,10 @@ async fn delete_post(
                 rpc_client.delete_post(id).await?;
                 bot.delete_message(msg.chat.id, msg.id).await?;
             }
+        } else {
+            bot.send_message(msg.chat.id, "У вас нет доступа")
+                .reply_markup(TextCommand::guest_keyboard())
+                .await?;
         }
     }
     Ok(())
@@ -232,7 +269,7 @@ async fn posts_page(
                                     "<b>{title}</b>\n{content}\nОпубликую: {date}",
                                     title = post.title,
                                     content = post.content,
-                                    date = post.publish_datetime.unwrap_or_default().to_rfc3339(),
+                                    date = moscow(post.publish_datetime.unwrap_or_default()),
                                 )
                             }
                             shared::models::Status::Published => {
@@ -240,7 +277,7 @@ async fn posts_page(
                                     "<b>{title}</b>\n{content}\nОпубликован: {date}",
                                     title = post.title,
                                     content = post.content,
-                                    date = post.publish_datetime.unwrap_or_default().to_rfc3339(),
+                                    date = moscow(post.publish_datetime.unwrap_or_default()),
                                 )
                             }
                             _ => {
@@ -305,6 +342,276 @@ async fn posts_page(
                 }
                 _ => {}
             }
+        } else {
+            bot.send_message(msg.chat.id, "У вас нет доступа")
+                .reply_markup(TextCommand::guest_keyboard())
+                .await?;
+        }
+    }
+    Ok(())
+}
+async fn users_drafts(
+    bot: Bot,
+    q: CallbackQuery,
+    cb: MyCallback,
+    mut rpc_client: Client,
+) -> Result<()> {
+    bot.answer_callback_query(q.id.clone()).await?;
+    if let Some(msg) = q.regular_message() {
+        let from = q.from.id.0.try_into()?;
+        let role = rpc_client
+            .get_user(from)
+            .await?
+            .map(|u| u.role)
+            .unwrap_or(Role::Guest);
+        if role == Role::Admin {
+            if let MyCallback::Drafts { author_id } = cb {
+                let (posts, has_next) = rpc_client.drafts(author_id, 1).await?;
+                for post in posts {
+                    let text = format!(
+                        "<b>{title}</b>\n{content}",
+                        title = post.title,
+                        content = post.content
+                    );
+                    let post_id = post.id;
+                    let mu = MyCallback::not_published_kb(post_id);
+                    match post.tg_photo_file_id {
+                        Some(file_id) => {
+                            let photo = InputFile::file_id(file_id.into());
+                            bot.send_photo(msg.chat.id, photo)
+                                .caption(text)
+                                .reply_markup(mu)
+                                .parse_mode(teloxide::types::ParseMode::Html)
+                                .await?;
+                        }
+                        None => {
+                            // TODO: video?
+                            bot.send_message(msg.chat.id, text)
+                                .reply_markup(mu)
+                                .parse_mode(teloxide::types::ParseMode::Html)
+                                .await?;
+                        }
+                    }
+                }
+                if has_next {
+                    bot.send_message(msg.chat.id, "Это не все")
+                        .reply_markup(MyCallback::has_next_kb(author_id, Status::Draft, 2))
+                        .await?;
+                } else {
+                    bot.send_message(msg.chat.id, "Это все")
+                        .reply_markup(MyCallback::cancel_button())
+                        .await?;
+                }
+            }
+        } else {
+            bot.send_message(msg.chat.id, "У вас нет доступа")
+                .reply_markup(TextCommand::guest_keyboard())
+                .await?;
+        }
+    }
+    Ok(())
+}
+async fn users_pending(
+    bot: Bot,
+    q: CallbackQuery,
+    cb: MyCallback,
+    mut rpc_client: Client,
+) -> Result<()> {
+    bot.answer_callback_query(q.id.clone()).await?;
+    if let Some(msg) = q.regular_message() {
+        let from = q.from.id.0.try_into()?;
+        let role = rpc_client
+            .get_user(from)
+            .await?
+            .map(|u| u.role)
+            .unwrap_or(Role::Guest);
+        if role == Role::Admin {
+            if let MyCallback::Pending { author_id } = cb {
+                let (posts, has_next) = rpc_client.pending(author_id, 1).await?;
+                for post in posts {
+                    let text = format!(
+                        "<b>{title}</b>\n{content}\nОпубликую: {date}",
+                        title = post.title,
+                        content = post.content,
+                        date = moscow(post.publish_datetime.unwrap_or_default()),
+                    );
+                    let post_id = post.id;
+                    let mu = MyCallback::not_published_kb(post_id);
+                    match post.tg_photo_file_id {
+                        Some(file_id) => {
+                            let photo = InputFile::file_id(file_id.into());
+                            bot.send_photo(msg.chat.id, photo)
+                                .caption(text)
+                                .reply_markup(mu)
+                                .parse_mode(teloxide::types::ParseMode::Html)
+                                .await?;
+                        }
+                        None => {
+                            // TODO: video?
+                            bot.send_message(msg.chat.id, text)
+                                .reply_markup(mu)
+                                .parse_mode(teloxide::types::ParseMode::Html)
+                                .await?;
+                        }
+                    }
+                }
+                if has_next {
+                    bot.send_message(msg.chat.id, "Это не все")
+                        .reply_markup(MyCallback::has_next_kb(author_id, Status::Pending, 2))
+                        .await?;
+                } else {
+                    bot.send_message(msg.chat.id, "Это все")
+                        .reply_markup(MyCallback::cancel_button())
+                        .await?;
+                }
+            }
+        } else {
+            bot.send_message(msg.chat.id, "У вас нет доступа")
+                .reply_markup(TextCommand::guest_keyboard())
+                .await?;
+        }
+    }
+    Ok(())
+}
+async fn users_published(
+    bot: Bot,
+    q: CallbackQuery,
+    cb: MyCallback,
+    mut rpc_client: Client,
+) -> Result<()> {
+    bot.answer_callback_query(q.id.clone()).await?;
+    if let Some(msg) = q.regular_message() {
+        let from = q.from.id.0.try_into()?;
+        let role = rpc_client
+            .get_user(from)
+            .await?
+            .map(|u| u.role)
+            .unwrap_or(Role::Guest);
+        if role == Role::Admin {
+            if let MyCallback::Published { author_id } = cb {
+                let (posts, has_next) = rpc_client.published(author_id, 1).await?;
+                for post in posts {
+                    let text = format!(
+                        "<b>{title}</b>\n{content}\nОпубликован: {date}",
+                        title = post.title,
+                        content = post.content,
+                        date = moscow(post.publish_datetime.unwrap_or_default()),
+                    );
+                    let post_id = post.id;
+                    let mu = MyCallback::published_kb(post_id);
+                    match post.tg_photo_file_id {
+                        Some(file_id) => {
+                            let photo = InputFile::file_id(file_id.into());
+                            bot.send_photo(msg.chat.id, photo)
+                                .caption(text)
+                                .reply_markup(mu)
+                                .parse_mode(teloxide::types::ParseMode::Html)
+                                .await?;
+                        }
+                        None => {
+                            // TODO: video?
+                            bot.send_message(msg.chat.id, text)
+                                .reply_markup(mu)
+                                .parse_mode(teloxide::types::ParseMode::Html)
+                                .await?;
+                        }
+                    }
+                }
+                if has_next {
+                    bot.send_message(msg.chat.id, "Это не все")
+                        .reply_markup(MyCallback::has_next_kb(author_id, Status::Published, 2))
+                        .await?;
+                } else {
+                    bot.send_message(msg.chat.id, "Это все")
+                        .reply_markup(MyCallback::cancel_button())
+                        .await?;
+                }
+            }
+        } else {
+            bot.send_message(msg.chat.id, "У вас нет доступа")
+                .reply_markup(TextCommand::guest_keyboard())
+                .await?;
+        }
+    }
+    Ok(())
+}
+async fn publish_post(
+    bot: Bot,
+    q: CallbackQuery,
+    cb: MyCallback,
+    mut rpc_client: Client,
+) -> Result<()> {
+    bot.answer_callback_query(q.id.clone()).await?;
+    if let Some(msg) = q.regular_message() {
+        let from = q.from.id.0.try_into()?;
+        let role = rpc_client
+            .get_user(from)
+            .await?
+            .map(|u| u.role)
+            .unwrap_or(Role::Guest);
+        if role != Role::Guest {
+            if let MyCallback::PublishNow { id } = cb {
+                let post = rpc_client
+                    .publish_now(id)
+                    .await?
+                    .ok_or(anyhow!("Error publishing post"))?;
+                let text = format!(
+                    "<b>{title}</b>\n{content}\nОпубликован: {date}",
+                    title = post.title,
+                    content = post.content,
+                    date = moscow(post.publish_datetime.unwrap_or_default()),
+                );
+                let mu = MyCallback::published_kb(post.id);
+                if bot
+                    .edit_message_text(msg.chat.id, msg.id, text)
+                    .reply_markup(mu.clone())
+                    .parse_mode(teloxide::types::ParseMode::Html)
+                    .await
+                    .is_err()
+                {
+                    bot.edit_caption(msg)
+                        .reply_markup(mu)
+                        .parse_mode(teloxide::types::ParseMode::Html)
+                        .await?;
+                }
+            }
+        } else {
+            bot.send_message(msg.chat.id, "У вас нет доступа")
+                .reply_markup(TextCommand::guest_keyboard())
+                .await?;
+        }
+    }
+    Ok(())
+}
+async fn set_publish_date(
+    bot: Bot,
+    q: CallbackQuery,
+    dialogue: MyDialogue,
+    cb: MyCallback,
+    mut rpc_client: Client,
+) -> Result<()> {
+    bot.answer_callback_query(q.id.clone()).await?;
+    if let Some(msg) = q.regular_message() {
+        let from = q.from.id.0.try_into()?;
+        let role = rpc_client
+            .get_user(from)
+            .await?
+            .map(|u| u.role)
+            .unwrap_or(Role::Guest);
+        if role != Role::Guest {
+            if let MyCallback::SetPublishDate { id } = cb {
+                let text = "Пришлите дату и время в формате '2025-09-14 10:15'";
+                bot.send_message(msg.chat.id, text)
+                    .reply_markup(KeyboardRemove::new())
+                    .await?;
+                dialogue
+                    .update(crate::State::PublishDateReceive { post_id: id })
+                    .await?;
+            }
+        } else {
+            bot.send_message(msg.chat.id, "У вас нет доступа")
+                .reply_markup(TextCommand::guest_keyboard())
+                .await?;
         }
     }
     Ok(())
