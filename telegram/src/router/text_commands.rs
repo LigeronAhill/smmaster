@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use client::Client;
 use dptree::case;
 use shared::models::{Role, Status};
@@ -19,6 +19,7 @@ pub(super) fn router() -> Handler<'static, Result<()>, DpHandlerDescription> {
         .branch(case![TextCommand::Drafts].endpoint(drafts))
         .branch(case![TextCommand::Pending].endpoint(pending))
         .branch(case![TextCommand::Published].endpoint(published))
+        .branch(case![TextCommand::RequestAccess].endpoint(request_access))
 }
 
 async fn users(bot: Bot, msg: Message, mut rpc_client: Client) -> Result<()> {
@@ -98,10 +99,6 @@ async fn drafts(bot: Bot, msg: Message, mut rpc_client: Client) -> Result<()> {
                 bot.send_message(msg.chat.id, "Это не все")
                     .reply_markup(MyCallback::has_next_kb(id, Status::Draft, 2))
                     .await?;
-            } else {
-                bot.send_message(msg.chat.id, "Это все")
-                    .reply_markup(MyCallback::cancel_button())
-                    .await?;
             }
         } else {
             bot.send_message(msg.chat.id, "У вас нет доступа")
@@ -128,10 +125,6 @@ async fn pending(bot: Bot, msg: Message, mut rpc_client: Client) -> Result<()> {
             if has_next {
                 bot.send_message(msg.chat.id, "Это не все")
                     .reply_markup(MyCallback::has_next_kb(id, Status::Pending, 2))
-                    .await?;
-            } else {
-                bot.send_message(msg.chat.id, "Это все")
-                    .reply_markup(MyCallback::cancel_button())
                     .await?;
             }
         } else {
@@ -160,10 +153,6 @@ async fn published(bot: Bot, msg: Message, mut rpc_client: Client) -> Result<()>
                 bot.send_message(msg.chat.id, "Это не все")
                     .reply_markup(MyCallback::has_next_kb(id, Status::Published, 2))
                     .await?;
-            } else {
-                bot.send_message(msg.chat.id, "Это все")
-                    .reply_markup(MyCallback::cancel_button())
-                    .await?;
             }
         } else {
             bot.send_message(msg.chat.id, "У вас нет доступа")
@@ -172,5 +161,43 @@ async fn published(bot: Bot, msg: Message, mut rpc_client: Client) -> Result<()>
         }
     }
 
+    Ok(())
+}
+async fn request_access(bot: Bot, msg: Message, mut rpc_client: Client) -> Result<()> {
+    if let Some(from) = msg.from.as_ref() {
+        let id = from.id.0.try_into()?;
+        let author = rpc_client
+            .get_user(id)
+            .await?
+            .ok_or(anyhow!("user not found"))?;
+        let mut page = 1;
+        let mut users = Vec::new();
+        loop {
+            let (current_users, has_next) = rpc_client.list_users(page).await?;
+            users.extend(current_users);
+            if has_next {
+                page += 1;
+            } else {
+                break;
+            }
+        }
+        for user in users {
+            if user.role == Role::Admin {
+                let chat_id = ChatId(user.telegram_id);
+                let name = if let Some(last) = author.last_name.as_ref() {
+                    format!("{first} {last}", first = author.first_name)
+                } else {
+                    author.first_name
+                };
+                let mu = MyCallback::guest_kb(user.telegram_id);
+                let text = format!("Пользователь <b>{name}</b> запрашивает доступ");
+                bot.send_message(chat_id, text)
+                    .reply_markup(mu)
+                    .parse_mode(teloxide::types::ParseMode::Html)
+                    .await?;
+                break;
+            }
+        }
+    }
     Ok(())
 }

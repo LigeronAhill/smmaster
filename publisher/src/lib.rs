@@ -10,14 +10,21 @@ pub struct Publisher {
     tg: teloxide::Bot,
     tg_channel: ChatId,
     rpc_client: client::Client,
+    vk_client: vk::VKClient,
 }
 impl Publisher {
-    pub fn new(bot: teloxide::Bot, tg_channel_id: i64, rpc_client: client::Client) -> Self {
+    pub fn new(
+        bot: teloxide::Bot,
+        tg_channel_id: i64,
+        rpc_client: client::Client,
+        vk_client: vk::VKClient,
+    ) -> Self {
         let tg_channel = ChatId(tg_channel_id);
         Self {
             tg: bot,
             tg_channel,
             rpc_client,
+            vk_client,
         }
     }
     pub async fn run(self) {
@@ -32,6 +39,9 @@ impl Publisher {
     async fn publish(&self, post: Post) -> Result<()> {
         let mut client = self.rpc_client.clone();
         if let Some(post) = client.publish_now(post.id).await? {
+            // VK
+            self.vk_client.publish(&post).await?;
+
             // Telegram
             if let Some(photo) = post.tg_photo_file_id {
                 let photo = InputFile::file_id(FileId::from(photo));

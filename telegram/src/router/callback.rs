@@ -215,6 +215,14 @@ async fn delete_post(
             if let MyCallback::DeletePost { id } = cb {
                 rpc_client.delete_post(id).await?;
                 bot.delete_message(msg.chat.id, msg.id).await?;
+                let mu = if role == Role::Admin {
+                    TextCommand::admin_keyboard()
+                } else {
+                    TextCommand::editor_keyboard()
+                };
+                bot.send_message(msg.chat.id, "Пост удален")
+                    .reply_markup(mu)
+                    .await?;
             }
         } else {
             bot.send_message(msg.chat.id, "У вас нет доступа")

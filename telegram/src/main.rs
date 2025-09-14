@@ -36,7 +36,7 @@ struct Cli {
     vktoken: String,
     /// VK group id
     #[arg(long)]
-    vkgroup: String,
+    vkgroup: i64,
 }
 
 pub type MyDialogue = Dialogue<State, InMemStorage<State>>;
@@ -64,16 +64,21 @@ async fn main() -> Result<()> {
     tracing::info!("🚀 Starting 🤖  bot");
 
     // vk
-    let _ = (vk_token, vk_group);
+    let vk_client = vk::VKClient::new(vk_token, vk_group).await?;
 
     // publisher
 
-    let publisher = Publisher::new(bot.clone(), tg_channel, rpc_client.clone());
+    let publisher = Publisher::new(
+        bot.clone(),
+        tg_channel,
+        rpc_client.clone(),
+        vk_client.clone(),
+    );
     tokio::spawn(publisher.run());
 
     // bot
     Dispatcher::builder(bot, router::master())
-        .dependencies(deps![InMemStorage::<State>::new(), rpc_client])
+        .dependencies(deps![InMemStorage::<State>::new(), rpc_client, vk_client])
         .default_handler(|upd| async move {
             tracing::warn!("Unhandled update: {upd:?}");
         })

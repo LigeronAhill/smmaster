@@ -12,3 +12,4 @@ client = { path = "../client" }
 anyhow.workspace = true
 uuid = { workspace = true, features = ["serde", "v4"] }
 chrono = { workspace = true, features = ["serde"] }
+vk = { path = "../vk" }
